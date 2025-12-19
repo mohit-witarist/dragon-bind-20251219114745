@@ -1,59 +1,76 @@
 import React, { useMemo } from 'react';
-import { Instances, Instance, Float, Text } from '@react-three/drei';
+import { Float } from '@react-three/drei';
 import * as THREE from 'three';
 
+const VALLEY_WIDTH = 1200;
+const VALLEY_LENGTH = 3000;
+
+const Mountain = ({ position, scale, rotation }) => (
+  <mesh position={position} scale={scale} rotation={rotation} receiveShadow>
+    <coneGeometry args={[1, 2, 6]} />
+    <meshStandardMaterial color="#2d2a26" roughness={1} flatShading />
+  </mesh>
+);
+
 export default function Environment() {
-  // Generate random islands
+  const landscape = useMemo(() => {
+    const items = [];
+    // Perimeter Mountains
+    for (let z = -VALLEY_LENGTH/2; z < VALLEY_LENGTH/2; z += 300) {
+      items.push({ pos: [-VALLEY_WIDTH/2, 100, z], scale: [200, 400 + Math.random()*200, 300], rot: [0, Math.random(), 0] });
+      items.push({ pos: [VALLEY_WIDTH/2, 100, z], scale: [200, 400 + Math.random()*200, 300], rot: [0, Math.random(), 0] });
+    }
+    // Far Ends
+    for (let x = -VALLEY_WIDTH/2; x < VALLEY_WIDTH/2; x += 300) {
+      items.push({ pos: [x, 100, -VALLEY_LENGTH/2], scale: [300, 500, 200], rot: [0, Math.random(), 0] });
+      items.push({ pos: [x, 100, VALLEY_LENGTH/2], scale: [300, 500, 200], rot: [0, Math.random(), 0] });
+    }
+    return items;
+  }, []);
+
   const islands = useMemo(() => {
-    return Array.from({ length: 40 }).map((_, i) => ({
+    return Array.from({ length: 60 }).map((_, i) => ({
       position: [
-        (Math.random() - 0.5) * 1000,
-        Math.random() * 100 - 20,
-        (Math.random() - 0.5) * 1000,
+        (Math.random() - 0.5) * (VALLEY_WIDTH - 200),
+        Math.random() * 200,
+        (Math.random() - 0.5) * (VALLEY_LENGTH - 200),
       ],
-      scale: 5 + Math.random() * 20,
-      rotation: [0, Math.random() * Math.PI, 0],
+      scale: 10 + Math.random() * 30
     }));
   }, []);
 
   return (
     <group>
-      {/* Ground plane */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -2, 0]} receiveShadow>
-        <planeGeometry args={[2000, 2000]} />
-        <meshStandardMaterial color="#1a2e14" />
+      {/* Terrain Base */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -50, 0]} receiveShadow>
+        <planeGeometry args={[VALLEY_WIDTH + 500, VALLEY_LENGTH + 500]} />
+        <meshStandardMaterial color="#1a1c15" />
       </mesh>
 
+      {/* Mountain Walls */}
+      {landscape.map((m, i) => (
+        <Mountain key={i} position={m.pos} scale={m.scale} rotation={m.rot} />
+      ))}
+
       {/* Floating Islands */}
-      <Instances range={40}>
-        <boxGeometry args={[1, 0.5, 1]} />
-        <meshStandardMaterial color="#4a3728" roughness={1} />
-        {islands.map((island, i) => (
-          <group key={i} position={island.position} scale={island.scale} rotation={island.rotation}>
-            <Instance />
-            {/* Green top */}
-            <mesh position={[0, 0.26, 0]}>
-               <boxGeometry args={[1.05, 0.1, 1.05]} />
-               <meshStandardMaterial color="#2d5a27" />
-            </mesh>
-          </group>
-        ))}
-      </Instances>
+      {islands.map((island, i) => (
+        <group key={i} position={island.position} scale={island.scale}>
+          <mesh castShadow receiveShadow>
+            <dodecahedronGeometry args={[1, 1]} />
+            <meshStandardMaterial color="#3d352d" roughness={1} flatShading />
+          </mesh>
+          <mesh position={[0, 0.5, 0]} scale={[1.1, 0.2, 1.1]}>
+            <dodecahedronGeometry args={[1, 0]} />
+            <meshStandardMaterial color="#1e3d14" flatShading />
+          </mesh>
+        </group>
+      ))}
 
-      {/* Clouds */}
-      <group>
-        {Array.from({ length: 20 }).map((_, i) => (
-          <Float key={i} speed={1} rotationIntensity={0.5} floatIntensity={0.5}>
-            <mesh position={[(Math.random() - 0.5) * 800, 80 + Math.random() * 50, (Math.random() - 0.5) * 800]}>
-              <sphereGeometry args={[10 + Math.random() * 20, 16, 16]} />
-              <meshStandardMaterial color="white" transparent opacity={0.4} />
-            </mesh>
-          </Float>
-        ))}
-      </group>
-
-      <ambientLight intensity={0.5} />
-      <directionalLight position={[10, 20, 10]} intensity={1.5} castShadow />
+      {/* Atmospheric Mist */}
+      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -40, 0]}>
+        <planeGeometry args={[5000, 5000]} />
+        <meshStandardMaterial color="#222" transparent opacity={0.4} />
+      </mesh>
     </group>
   );
 }

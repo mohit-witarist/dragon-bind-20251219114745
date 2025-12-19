@@ -8,15 +8,21 @@ export default function FlightController({ children }) {
   const { controls, updateFlightData } = useStore();
   const { camera } = useThree();
 
-  const vel = useRef(new THREE.Vector3());
+  const vel = useRef(new THREE.Vector3(0, 0, 10));
   const rotation = useRef(new THREE.Euler(0, 0, 0, 'YXZ'));
   
-  // Physics constants
-  const ACCEL = 30;
-  const DRAG = 0.98;
-  const GRAVITY = 0.15;
-  const LIFT = 0.4;
-  const TURN_SPEED = 1.5;
+  // Valley Bounds
+  const BOUNDS = {
+    x: 180, // Half width of valley
+    yMin: -80,
+    yMax: 200,
+    z: 950  // Half length
+  };
+
+  const ACCEL = 50;
+  const DRAG = 0.99;
+  const GRAVITY = 0.12;
+  const TURN_SPEED = 1.6;
 
   useFrame((state, delta) => {
     if (!dragon.current) return;
@@ -25,65 +31,68 @@ export default function FlightController({ children }) {
     if (controls.left) rotation.current.y += TURN_SPEED * delta;
     if (controls.right) rotation.current.y -= TURN_SPEED * delta;
     
-    // Pitch (up/down) based on speed and manual input if we wanted, 
-    // but here we base it on forward/backward
-    if (controls.forward) rotation.current.x = THREE.MathUtils.lerp(rotation.current.x, -0.2, 0.05);
-    else if (controls.backward) rotation.current.x = THREE.MathUtils.lerp(rotation.current.x, 0.4, 0.05);
-    else rotation.current.x = THREE.MathUtils.lerp(rotation.current.x, 0, 0.05);
+    const targetPitch = controls.forward ? -0.5 : (controls.backward ? 0.7 : 0);
+    rotation.current.x = THREE.MathUtils.lerp(rotation.current.x, targetPitch, 0.08);
 
     dragon.current.rotation.copy(rotation.current);
 
-    // 2. Handle Acceleration
+    // 2. Physics & Movement
     const forwardDir = new THREE.Vector3(0, 0, 1).applyQuaternion(dragon.current.quaternion);
     
-    if (controls.forward) {
-      vel.current.addScaledVector(forwardDir, ACCEL * delta);
+    const enginePower = controls.boost ? ACCEL * 2.5 : ACCEL;
+    if (controls.forward || controls.boost) {
+      vel.current.addScaledVector(forwardDir, enginePower * delta);
+    } else {
+      vel.current.addScaledVector(forwardDir, 8 * delta);
     }
     
-    // Space for Flapping / Lift
     if (controls.flap) {
-      vel.current.y += LIFT;
-      vel.current.addScaledVector(forwardDir, 5 * delta);
+      vel.current.y += 0.8;
+      vel.current.addScaledVector(forwardDir, 12 * delta);
     }
 
-    // Boost
-    if (controls.boost) {
-       vel.current.addScaledVector(forwardDir, ACCEL * 2 * delta);
+    vel.current.y -= GRAVITY;
+    vel.current.multiplyScalar(DRAG);
+
+    // Apply movement
+    const nextPos = dragon.current.position.clone().addScaledVector(vel.current, delta);
+
+    // 3. BOUNDARY CONSTRAINTS (Stay in Valley)
+    // X Boundary (Walls)
+    if (Math.abs(nextPos.x) > BOUNDS.x) {
+      vel.current.x *= -0.5; // Bounce off wall
+      nextPos.x = Math.sign(nextPos.x) * BOUNDS.x;
     }
-
-    // 3. Physics / Environment
-    vel.current.y -= GRAVITY; // Gravity
-    vel.current.multiplyScalar(DRAG); // Air resistance
-
-    // Update position
-    dragon.current.position.addScaledVector(vel.current, delta);
-
-    // Ground collision (simple)
-    if (dragon.current.position.y < 2) {
-      dragon.current.position.y = 2;
+    // Z Boundary (Length)
+    if (Math.abs(nextPos.z) > BOUNDS.z) {
+      vel.current.z *= -0.5;
+      nextPos.z = Math.sign(nextPos.z) * BOUNDS.z;
+    }
+    // Y Boundary (Height/Floor)
+    if (nextPos.y < BOUNDS.yMin) {
+      nextPos.y = BOUNDS.yMin;
       vel.current.y = 0;
     }
+    if (nextPos.y > BOUNDS.yMax) {
+      nextPos.y = BOUNDS.yMax;
+      vel.current.y *= -0.5;
+    }
 
-    // 4. Update Global State
+    dragon.current.position.copy(nextPos);
+
+    // 4. Update HUD
     updateFlightData({
       speed: Math.round(vel.current.length() * 10),
-      altitude: Math.round(dragon.current.position.y),
+      altitude: Math.round(dragon.current.position.y + 100),
     });
 
-    // 5. Camera Follow logic
-    const idealOffset = new THREE.Vector3(0, 5, -15).applyQuaternion(dragon.current.quaternion);
-    const idealLookAt = new THREE.Vector3(0, 2, 10).applyQuaternion(dragon.current.quaternion);
+    // 5. Camera follow
+    const camTarget = new THREE.Vector3(0, 8, -25).applyQuaternion(dragon.current.quaternion);
+    const lookAtPos = new THREE.Vector3(0, 2, 20).applyQuaternion(dragon.current.quaternion);
     
-    const targetCamPos = dragon.current.position.clone().add(idealOffset);
-    const targetLookAtPos = dragon.current.position.clone().add(idealLookAt);
-
-    camera.position.lerp(targetCamPos, 0.1);
-    camera.lookAt(targetLookAtPos);
+    camera.position.lerp(dragon.current.position.clone().add(camTarget), 0.1);
+    camera.lookAt(dragon.current.position.clone().add(lookAtPos));
   });
 
-  return (
-    <group ref={dragon}>
-      {children}
-    </group>
-  );
+  return <group ref={dragon}>{children}</group>;
 }
